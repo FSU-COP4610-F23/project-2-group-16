@@ -1,0 +1,1 @@
+cmd_/home/ivan/Desktop/project-2-group-16/elevator/part2/modules.order := {   echo /home/ivan/Desktop/project-2-group-16/elevator/part2/my_timer.o; :; } > /home/ivan/Desktop/project-2-group-16/elevator/part2/modules.order

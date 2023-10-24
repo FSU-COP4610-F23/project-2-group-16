@@ -1,0 +1,1 @@
+cmd_/home/ivan/Desktop/project-2-group-16/elevator/part2/my_timer.mod := printf '%s\n'   my_timer.o | awk '!x[$$0]++ { print("/home/ivan/Desktop/project-2-group-16/elevator/part2/"$$0) }' > /home/ivan/Desktop/project-2-group-16/elevator/part2/my_timer.mod

@@ -1,0 +1,1 @@
+cmd_/home/ivan/Desktop/project-2-group-16/elevator/part2/Module.symvers :=  scripts/mod/modpost -m -a     -o /home/ivan/Desktop/project-2-group-16/elevator/part2/Module.symvers -T /home/ivan/Desktop/project-2-group-16/elevator/part2/modules.order -i Module.symvers -e 

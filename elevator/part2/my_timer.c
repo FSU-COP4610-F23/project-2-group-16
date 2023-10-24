@@ -13,6 +13,7 @@ MODULE_DESCRIPTION("Example of kernel module for timer");
 #define PARENT NULL
 
 static struct proc_dir_entry* timer_entry;
+static struct timespec64 ts_start; 
 
 static ssize_t timer_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos)
 {
@@ -22,9 +23,10 @@ static ssize_t timer_read(struct file *file, char __user *ubuf, size_t count, lo
     int elapsedTime = 0;
 
     ktime_get_real_ts64(&ts_now);
+    elapsedTime = ts_now.tv_sec - ts_start.tv_sec;
 
-    len = snprintf(buf, sizeof(buf), "current time: %lld\n", (long long)ts_now.tv_sec);
-    len += sprintf(buf + len, "Elapsed time: %lld\n");
+    len = snprintf(buf, sizeof(buf), "current time: %lld.%lld\n", (long long)ts_now.tv_sec, (long long)ts_now.tv_nsec);
+    len += snprintf(buf + len, sizeof(buf) - len, "Elapsed time: %lld seconds\n", (long long)elapsedTime);
 
     return simple_read_from_buffer(ubuf, count, ppos, buf, len); // better than copy_from_user
 }
@@ -35,6 +37,7 @@ static const struct proc_ops timer_fops = {
 
 static int __init timer_init(void)
 {
+    ktime_get_real_ts64(&ts_start);
     timer_entry = proc_create(ENTRY_NAME, PERMS, PARENT, &timer_fops);
     if (!timer_entry) {
         return -ENOMEM;

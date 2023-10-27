@@ -1,1 +1,0 @@
-cmd_/home/ivan/Downloads/project-2-group-16/elevator/part2/my_timer.ko := ld -r -m elf_x86_64 -z noexecstack --build-id=sha1  -T scripts/module.lds -o /home/ivan/Downloads/project-2-group-16/elevator/part2/my_timer.ko /home/ivan/Downloads/project-2-group-16/elevator/part2/my_timer.o /home/ivan/Downloads/project-2-group-16/elevator/part2/my_timer.mod.o;  true

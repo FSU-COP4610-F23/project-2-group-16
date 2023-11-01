@@ -8,6 +8,8 @@ int rnd(int min, int max) {
 }
 
 int main(int argc, char **argv) {
+	
+	printf("TESTTESTETS\n");
 	int type;
 	int start;
 	int dest;
@@ -17,9 +19,12 @@ int main(int argc, char **argv) {
 
 	if (argc != 2) {
 		printf("wrong number of args. producer.x num_of_requests\n");
+		printf("wrong number of args. producer.x num_of_requests\n");
 		return -1;
 	}
 	sscanf(argv[1],"%d",&num);
+
+	printf("TESTTESTETS\n");
 	for(i=0; i < num;i+=1)
 	{
 		type = rnd(0,3);
@@ -28,7 +33,6 @@ int main(int argc, char **argv) {
 		do {
 			dest = rnd(1, 6);
 		} while(dest == start);
-
 		long ret = issue_request(start, dest, type);
 		printf("Issue (%d, %d, %d) returned %ld\n", start, dest, type, ret);
 	}

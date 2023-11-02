@@ -6,6 +6,10 @@
 #include <linux/delay.h>
 #include <linux/list.h>
 #include <linux/random.h>
+#include <linux/mutex.h>
+#include <linux/slab.h>
+#include <linux/string.h>
+#include <linux/uaccess.h>
 
 
 MODULE_LICENSE("GPL");
@@ -16,6 +20,7 @@ MODULE_DESCRIPTION("Example of kernel module proc file for elevator");
 #define PERMS 0644
 #define PARENT NULL
 #define LOG_BUF_LEN 1024
+#define NUM_FLOORS 6
 
 static char log_buffer[LOG_BUF_LEN];
 static int buf_offset = 0;
@@ -23,6 +28,8 @@ static int buf_offset = 0;
 extern int (*STUB_start_elevator)(void);
 extern int (*STUB_issue_request)(int,int,int);
 extern int (*STUB_stop_elevator)(void);
+
+enum currentState { OFFLINE, IDLE, LOADING, UP, DOWN };
 
 struct Passenger {
     int type;
@@ -38,25 +45,26 @@ struct Floor {
 };
 
 struct Elevator {
-    //struct task_struct *kthread;
+   
     int current_floor;
     int total_passengers;
     int state; 
-    int total_weight ;
+    int total_weight;
     int passengers_serviced; 
     //struct list_head passenger_list;
+    enum currentState status;
+    char * status1; 
+    struct task_struct *kthread;
+    //struct mutex mutex;
 };
 
-struct Elevator elevator
-{
-    current_floor = 1;
-    total_passengers = 0;
-    state = 0;
-    total_weight = 0;
-    passengers_serviced = 0; 
+struct FloorStatus {
+    int floors[6]; 
 };
 
-
+struct Elevator elevator;
+static struct Elevator Floor; 
+static struct FloorStatus Floor_status; 
 
 
 static struct proc_dir_entry* elevator_entry;
@@ -81,8 +89,40 @@ int stop_elevator(void) {
     return 0;
 }
 
+int move_to_next_floor(int floor)
+{
+   return (floor + 1) % NUM_FLOORS;
+}
 
 
+int process_elevator_state(struct Elevator * e_thread) {
+    int status = e_thread->status;
+    switch(status) {
+        case 0: 
+            elevator.status1 = "OFFLINE"; 
+            printk(KERN_INFO "Elevator is OFFLINE\n");
+            break;
+        case 1:
+            elevator.status1 = "IDLE"; 
+            printk(KERN_INFO "Elevator is IDLE\n");
+            break;
+        case 2:
+            elevator.status1 = "LOADING"; 
+            printk(KERN_INFO "Elevator is LOADING\n");
+            break;              // changed states!
+        case 3: 
+            elevator.status1 = "UP"; 
+            printk(KERN_INFO "Elevator is going UP\n");
+            break;
+        case 4:
+            elevator.status1 = "DOWN"; 
+            printk(KERN_INFO "Elevator is going DOWN\n");
+            break;
+        default:
+            break;
+    }
+    return status;
+}
 
 
 static ssize_t elevator_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos)
@@ -90,7 +130,7 @@ static ssize_t elevator_read(struct file *file, char __user *ubuf, size_t count,
     char buf[10000];
     int len = 0;
 
-    len = sprintf(buf, "Elevator state: \n");
+    len = sprintf(buf, "Elevator state: %s\n", elevator.status1);
     len += sprintf(buf + len, "Current floor: %d\n", elevator.current_floor);
     len += sprintf(buf + len, "Current load: %d\n", elevator.total_weight);
     len += sprintf(buf + len, "Elevator status: \n\n");
@@ -105,7 +145,7 @@ static ssize_t elevator_read(struct file *file, char __user *ubuf, size_t count,
     len += sprintf(buf + len, "Number of Passengers: %d\n", elevator.total_passengers);
     len += sprintf(buf + len, "Number of Passengers waiting: \n");
     len += sprintf(buf + len, "Number of Passengers serviced: %d\n", elevator.passengers_serviced);
-
+    
     return simple_read_from_buffer(ubuf, count, ppos, buf, len); // better than copy_from_user
 }
 
@@ -120,7 +160,13 @@ static int __init elevator_init(void)
     STUB_issue_request = issue_request;
     STUB_stop_elevator = stop_elevator;
 
-    struct Elevator elevator; 
+    //struct Elevator elevator; 
+    elevator.current_floor = 1;
+    elevator.total_passengers = 0;
+    elevator.state=0; 
+    elevator.total_weight = 0;
+    elevator.passengers_serviced = 0; 
+    elevator.status1 = "OFFLINE";         //CHECK THIS AGAIN LATER
 
     elevator_entry = proc_create(ENTRY_NAME, PERMS, PARENT, &elevator_fops);
     if (!elevator_entry) {

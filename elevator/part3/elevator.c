@@ -3,188 +3,611 @@
 #include <linux/kernel.h>
 #include <linux/proc_fs.h>
 #include <linux/kthread.h>
-#include <linux/delay.h>
-#include <linux/list.h>
-#include <linux/random.h>
-#include <linux/mutex.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
-
+#include <linux/random.h>
+#include <linux/delay.h>
+#include <linux/list.h>
+#include <linux/mutex.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("cop4610t");
-MODULE_DESCRIPTION("Example of kernel module proc file for elevator");
+MODULE_DESCRIPTION("A elevator that demonstrates kernel threads with proc entry");
+
+#define NUM_TABLES 6
+
+//define types
+#define FRESHMAN 0
+#define SOPHOMORE 1
+#define JUNIOR 2
+#define SENIOR 3
 
 #define ENTRY_NAME "elevator"
 #define PERMS 0644
 #define PARENT NULL
-#define LOG_BUF_LEN 1024
-#define NUM_FLOORS 6
 
-static char log_buffer[LOG_BUF_LEN];
-static int buf_offset = 0;
+#define MAX_PASSENGERS 5
+#define MAX_LOAD 750
 
 extern int (*STUB_start_elevator)(void);
 extern int (*STUB_issue_request)(int,int,int);
 extern int (*STUB_stop_elevator)(void);
 
-enum currentState { OFFLINE, IDLE, LOADING, UP, DOWN };
+enum state {OFFLINE, UP, DOWN, LOADING, IDLE};      // you should note that enums are just integers.
 
-struct Passenger {
-    int type;
-    int dest_floor;
-    int start_floor;
-    int weight;
-} ;
-
-struct Floor {
-    int floor_num;
-    int num_passengers;
-    struct list_head passenger_list;
-};
-
-struct Elevator {
-   
-    int current_floor;
+struct elevator {
+    int current_table;              // an example of information to store in your elevator.
+    int total_serviced;
     int total_passengers;
-    int state; 
-    int total_weight;
-    int passengers_serviced; 
-    //struct list_head passenger_list;
-    enum currentState status;
-    char * status1; 
-    struct task_struct *kthread;
-    //struct mutex mutex;
+    int total_waiting; 
+    enum state status;
+    enum state direction;
+    int load_weight;
+    struct task_struct *kthread;    // this is the struct to make a kthread.
+    //struct list_head list;
+    struct list_head passengers;
+     struct mutex elevator_mutex;
 };
 
-struct FloorStatus {
-    int floors[6]; 
+struct floor {
+    int num_passengers;
+    struct list_head list;  // this is how we set up a list of a struct
+    struct mutex floor_mutex;
 };
 
-struct Elevator elevator;
-static struct Elevator Floor; 
-static struct FloorStatus Floor_status; 
+//passenger struct
+struct Passenger {       //change to passenger
+    char *name;
+    struct list_head list; // this is how we set up a list of a struct
+    int start_floor;  
+    int dest_floor;
+    int type;
+    int weight;
+};
+
+//floors struct
+struct Floors {
+    int tables[6];
+    struct floor floors[6];     //change to 6
+};
+
+static struct mutex floors_mutex;
+static struct proc_dir_entry *proc_entry;
+
+/* Here is our global variables */
+static struct elevator elevator_thread;
+static struct Floors Floors;
 
 
-static struct proc_dir_entry* elevator_entry;
-
-
-/* This function is called when when the start_elevator system call is called */
-int start_elevator(void) {
-    //buf_offset += snprintf(log_buffer + buf_offset, LOG_BUF_LEN - buf_offset, "start_elevator call is called\n");
-    return 0;
+/* Move to the next table */
+int move_to_next_table(int table) {
+    return (table + 1) % NUM_TABLES;
 }
 
-/* This function is called when when the issue_request system call is called */
-int issue_request(int start_floor, int destination_floor, int type) {
-    printk(KERN_INFO "start: %d, dest: %d,type: %d ", start_floor, destination_floor, type);
-    return 0;
+int move_down_table(int table) {
+    return (table + NUM_TABLES - 1) % NUM_TABLES;
 }
 
+void process_elevator_state(struct elevator * w_thread) {
+    mutex_lock(&w_thread->elevator_mutex);
+    struct floor *current_floor = &Floors.floors[w_thread->current_table];
+    struct list_head *temp;
+    struct list_head *dummy;
+    struct Passenger *passenger = list_first_entry(&w_thread->passengers, struct Passenger, list);
+    //current_floor = &Floors.floors[w_thread->current_table];
+    switch(w_thread->status) {
+        case UP:
+            ssleep(1);  // Sleeps for 1 second before processing next stuff!
+    
+            if (w_thread->load_weight > MAX_LOAD || w_thread->total_passengers > MAX_PASSENGERS) {
+                // If at the top, start moving DOWN after loading
+                
+                w_thread->current_table = move_to_next_table(w_thread->current_table);
+                w_thread->direction = UP; 
+            }
 
-/* This function is called when when the stop_elevator system call is called */
-int stop_elevator(void) {
-    //buf_offset += snprintf(log_buffer + buf_offset, LOG_BUF_LEN - buf_offset, "stop_elevator call is called\n");
-    return 0;
-}
+            if (w_thread->current_table == NUM_TABLES - 1) {
+                // If at the top, start moving DOWN after loading
+                if (!list_empty(&current_floor->list) && w_thread->total_passengers <= MAX_PASSENGERS && w_thread->load_weight <= MAX_LOAD) {
+                w_thread->status = LOADING;
+                 //w_thread->status = (w_thread->load_weight <= MAX_LOAD || w_thread->total_passengers <= MAX_PASSENGERS) ? LOADING : UP;
+   
+                } else {
+                w_thread->direction = DOWN;
+                w_thread->status = DOWN;
+                }
+            }
+            
+            
+            else {
+                if (!list_empty(&current_floor->list) && w_thread->total_passengers <= MAX_PASSENGERS && w_thread->load_weight <= MAX_LOAD) {
+                w_thread->status = LOADING;
+                 //w_thread->status = (w_thread->load_weight <= MAX_LOAD || w_thread->total_passengers <= MAX_PASSENGERS) ? LOADING : UP;
+                //w_thread->current_table = move_to_next_table(w_thread->current_table);
+                } else{
+                // Otherwise, move to the next table and then load
+                w_thread->current_table = move_to_next_table(w_thread->current_table);
+                //w_thread->status = LOADING; 
+        
+                w_thread->direction = UP; // Introduce a 'direction' field to remember the intended direction after loading
+                }
+            }
+            if (passenger->dest_floor == w_thread->current_table+1) {
+                    w_thread->status = LOADING;
+                     //w_thread->status = (w_thread->load_weight <= MAX_LOAD || w_thread->total_passengers <= MAX_PASSENGERS) ? LOADING : UP;
+   
+                    
+            }
+            
 
-int move_to_next_floor(int floor)
-{
-   return (floor + 1) % NUM_FLOORS;
-}
+            if (list_empty(&w_thread->passengers) && w_thread->total_waiting == 0) {
+                w_thread->status = IDLE;
+            }
+            break;
+        case DOWN:
+            ssleep(1);  // Sleeps for 1 second before processing next stuff!
+             
+             if (w_thread->load_weight > MAX_LOAD || w_thread->total_passengers > MAX_PASSENGERS) {
+                // If at the top, start moving DOWN after loading
+                
+                w_thread->current_table = move_down_table(w_thread->current_table);
+                //w_thread->status = LOADING;
+                w_thread->direction = DOWN; // Introduce a 'direction' field to remember the intended direction after loading
+                
+            }
 
+            if (w_thread->current_table == 0) {
+                if (!list_empty(&current_floor->list) && w_thread->total_passengers <= MAX_PASSENGERS && w_thread->load_weight <= MAX_LOAD) {
+                w_thread->status = LOADING;
+                // w_thread->status = (w_thread->load_weight <= MAX_LOAD || w_thread->total_passengers <= MAX_PASSENGERS) ? LOADING : UP;
+   
+                } else {
+                w_thread->direction = UP;
+                w_thread->status = UP;
+                }
 
-int process_elevator_state(struct Elevator * e_thread) {
-    int status = e_thread->status;
-    switch(status) {
-        case 0: 
-            elevator.status1 = "OFFLINE"; 
-            printk(KERN_INFO "Elevator is OFFLINE\n");
+                // If at the bottom, start moving UP after loading
+                //w_thread->status = LOADING;
+                //w_thread->direction = UP; // Introduce a 'direction' field to remember the intended direction after loading
+            } 
+            
+            
+            else {
+                if (!list_empty(&current_floor->list) && w_thread->total_passengers <= MAX_PASSENGERS && w_thread->load_weight <= MAX_LOAD) {
+                w_thread->status = LOADING;
+                 //w_thread->status = (w_thread->load_weight <= MAX_LOAD || w_thread->total_passengers <= MAX_PASSENGERS) ? LOADING : UP;
+   
+                } else{
+
+                // Otherwise, move to the previous table and then load
+                w_thread->current_table = move_down_table(w_thread->current_table);
+                //w_thread->status = LOADING;
+                w_thread->direction = DOWN; // Introduce a 'direction' field to remember the intended direction after loading
+                }
+            }
+
+            if (passenger->dest_floor == w_thread->current_table+1) {
+                    w_thread->status = LOADING;
+                     //w_thread->status = (w_thread->load_weight <= MAX_LOAD || w_thread->total_passengers <= MAX_PASSENGERS) ? LOADING : UP;
+   
+                        
+                }
+            
+
+            if (list_empty(&w_thread->passengers) && w_thread->total_waiting == 0) {
+                w_thread->status = IDLE;
+            }
             break;
-        case 1:
-            elevator.status1 = "IDLE"; 
-            printk(KERN_INFO "Elevator is IDLE\n");
+
+case LOADING:
+    ssleep(2);  // Sleep for 2 seconds for loading
+
+    // Unloading passengers
+     mutex_lock(&current_floor->floor_mutex);
+    list_for_each_safe(temp, dummy, &w_thread->passengers) {
+        passenger = list_entry(temp, struct Passenger, list);
+        if (passenger->dest_floor == w_thread->current_table+1) {
+            list_del(temp);  // Remove passenger from the elevator
+            w_thread->load_weight -= passenger->weight;  // Adjust load weight
+            kfree(passenger);  // Free the memory allocated for the passenger
+            w_thread->total_serviced++;
+            w_thread->total_passengers--;
+        }
+    }
+
+    bool can_add_more = true;  // Flag to check if more passengers can be added
+    // Loading passengers
+    list_for_each_safe(temp, dummy, &current_floor->list) {
+        if (!can_add_more || w_thread->total_passengers >= MAX_PASSENGERS) break;
+
+        passenger = list_entry(temp, struct Passenger, list);
+
+        if (w_thread->load_weight + passenger->weight <= MAX_LOAD && w_thread->total_passengers < MAX_PASSENGERS) {
+            list_move_tail(temp, &w_thread->passengers); // Move passenger to elevator
+            w_thread->load_weight += passenger->weight; // Update the load weight
+            current_floor->num_passengers--; // Decrease the number of passengers on the current floor
+            w_thread->total_passengers++; 
+            w_thread->total_waiting--;
+        } else {
+            can_add_more = false;
+        }
+    }
+    mutex_unlock(&current_floor->floor_mutex); // Unlock the mutex for the current floor
+
+    // Decide next state based on the destinations of passengers inside
+    if (!list_empty(&w_thread->passengers)) {
+        struct Passenger *first_passenger = list_first_entry(&w_thread->passengers, struct Passenger, list);
+        if (first_passenger->dest_floor > w_thread->current_table) {
+            w_thread->direction = UP;
+        } else {
+            w_thread->direction = DOWN;
+        }
+        w_thread->status = w_thread->direction;
+    } else if (w_thread->total_waiting > 0) {
+        // If there are passengers waiting, but none on the elevator, decide next direction
+        w_thread->status = (w_thread->current_table == 0) ? UP : DOWN;
+    } 
+    
+    
+        else if (w_thread->load_weight > MAX_LOAD || w_thread->total_passengers > MAX_PASSENGERS ) {
+        // If there are passengers waiting, but none on the elevator, decide next direction
+        w_thread->status = (w_thread->current_table == 0) ? UP : DOWN;
+       break; }
+        
+        
+        else {
+        w_thread->status = IDLE;
+    }
+    break;
+
+ 
+
+        case IDLE:
+            // In IDLE state, the elevator does nothing but waits for new passengers
+            ssleep(1); // Sleep to prevent busy waiting
+
+            // Transition out of IDLE if there are passengers waiting
+            if (w_thread->total_waiting > 0) {
+                w_thread->status = (w_thread->current_table == 0) ? UP : DOWN;
+            }
             break;
-        case 2:
-            elevator.status1 = "LOADING"; 
-            printk(KERN_INFO "Elevator is LOADING\n");
-            break;              // changed states!
-        case 3: 
-            elevator.status1 = "UP"; 
-            printk(KERN_INFO "Elevator is going UP\n");
-            break;
-        case 4:
-            elevator.status1 = "DOWN"; 
-            printk(KERN_INFO "Elevator is going DOWN\n");
-            break;
+
         default:
             break;
     }
-    return status;
+    mutex_unlock(&w_thread->elevator_mutex);
+}
+
+/* LIST  */
+
+int add_passengers(int start, int dest, int type) {
+    int weight;
+    char *name;
+    struct Passenger *a;
+
+    switch (type) {
+        case FRESHMAN:
+            weight = 100;
+            name = "F";
+            break;
+        case SOPHOMORE:
+            weight = 150;
+            name = "O";
+            break;
+        case JUNIOR:
+            weight = 200;
+            name = "J";
+            break;
+        case SENIOR:
+            weight = 250;
+            name = "S";
+            break;
+        default:
+            return -1;
+    }
+
+    a = kmalloc(sizeof(struct Passenger) * 1, __GFP_RECLAIM);
+    if (a == NULL)
+        return -ENOMEM;
+
+    a->type = type;
+    a->start_floor = start;
+    a->dest_floor = dest; 
+    a->weight = weight;
+    a->name = name;
+
+    mutex_lock(&floors_mutex);
+    //list_add(&a->list, &passengerss.list); /* insert at front of list */
+    //list_add_tail(&a->list, &Floors.floors[0].list); /* insert at back of list */
+    list_add_tail(&a->list, &Floors.floors[start-1].list); // Add to the list of the start floor
+    Floors.floors[start-1].num_passengers++; 
+    elevator_thread.total_waiting++; 
+    mutex_unlock(&floors_mutex);
+
+    return 0;
 }
 
 
-static ssize_t elevator_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos)
+void delete_passengerss(int floor) {
+    struct list_head move_list;
+    struct list_head *temp;
+    struct list_head *dummy;
+    int i;
+    struct Passenger *a;
+
+    INIT_LIST_HEAD(&move_list);
+
+    /* move items to a temporary list to illustrate movement */
+    //list_for_each_prev_safe(temp, dummy, &passengerss.list) { /* backwards */
+    list_for_each_safe(temp, dummy, &Floors.floors[floor].list) { /* forwards */
+        a = list_entry(temp, struct Passenger, list);
+
+
+        list_move_tail(temp, &move_list); /* move to back of list */
+        //if (a->id == type) {
+            //list_move(temp, &move_list); /* move to front of list */
+        //  list_move_tail(temp, &move_list); /* move to back of list */
+        //}
+
+    }
+
+    /* print stats of list to syslog, entry version just as example (not needed here) */
+    i = 0;
+    //list_for_each_entry_reverse(a, &move_list, list) { /* backwards */
+    list_for_each_entry(a, &move_list, list) { /* forwards */
+        /* can access a directly e.g. a->id */
+        i++;
+    }
+
+    /* free up memory allocation of struct Passengers */
+    //list_for_each_prev_safe(temp, dummy, &move_list) { /* backwards */
+    list_for_each_safe(temp, dummy, &move_list) { /* forwards */
+        a = list_entry(temp, struct Passenger, list);
+        list_del(temp); /* removes entry from list */
+        kfree(a);
+    }
+}
+
+void delete_elevator(void) {
+    struct list_head move_list;
+    struct list_head *temp;
+    struct list_head *dummy;
+    int i;
+    struct Passenger *a;
+
+    INIT_LIST_HEAD(&move_list);
+
+    /* move items to a temporary list to illustrate movement */
+    //list_for_each_prev_safe(temp, dummy, &passengerss.list) { /* backwards */
+    list_for_each_safe(temp, dummy, &elevator_thread.passengers) { /* forwards */
+        a = list_entry(temp, struct Passenger, list);
+
+
+        list_move_tail(temp, &move_list); /* move to back of list */
+        //if (a->id == type) {
+            //list_move(temp, &move_list); /* move to front of list */
+        //  list_move_tail(temp, &move_list); /* move to back of list */
+        //}
+
+    }
+
+    /* print stats of list to syslog, entry version just as example (not needed here) */
+    i = 0;
+    //list_for_each_entry_reverse(a, &move_list, list) { /* backwards */
+    list_for_each_entry(a, &move_list, list) { /* forwards */
+        /* can access a directly e.g. a->id */
+        i++;
+    }
+
+    /* free up memory allocation of struct Passengers */
+    //list_for_each_prev_safe(temp, dummy, &move_list) { /* backwards */
+    list_for_each_safe(temp, dummy, &move_list) { /* forwards */
+        a = list_entry(temp, struct Passenger, list);
+        list_del(temp); /* removes entry from list */
+        kfree(a);
+    }
+}
+
+/* elevator */
+int elevator_active(void * _elevator) {
+    struct elevator * w_thread = (struct elevator *) _elevator;
+    printk(KERN_INFO "elevator thread has started running \n");
+    while(!kthread_should_stop()) {
+        process_elevator_state(w_thread);
+    }
+    return 0;
+}
+
+/* This is where we spawn our elevator thread */
+int spawn_elevator(struct elevator * w_thread) {
+    static int current_table = 0;
+
+    w_thread->current_table = current_table;
+    w_thread->kthread =
+        kthread_run(elevator_active, w_thread, "thread elevator\n"); // thread actually spawns here!
+
+    w_thread->status = UP; 
+    return 0;
+}
+
+// function to print to proc file the Floors state using elevator state
+int print_Floors_state(char * buf) {
+    int i;
+    int j; 
+    int len = 0;
+    struct Passenger *a;
+    struct Passenger *passenger;
+    struct list_head *temp;
+
+    // convert enums (integers) to strings
+    const char * states[5] = {"OFFLINE","UP", "DOWN","LOADING", "IDLE"};
+
+    len += sprintf(buf + len, "Elevator State: %s\n", states[elevator_thread.status]);
+    len += sprintf(buf + len, "Current floor: %d\n", elevator_thread.current_table+1);
+    len += sprintf(buf + len, "Current load: %d\n", elevator_thread.load_weight);
+    len += sprintf(buf + len, "Elevator status: ");
+    
+    //chat
+    list_for_each(temp, &elevator_thread.passengers) {
+        passenger = list_entry(temp, struct Passenger, list);
+        len += sprintf(buf + len, "%s%d ", passenger->name, passenger->dest_floor);
+    }
+    //chat
+    len += sprintf(buf + len, "\n\n"); 
+    for(i = 5; i >= 0; i--) {
+        int table = i + 1;
+
+        // ternary operators equivalent to the bottom if statement.
+        len += (i != elevator_thread.current_table)
+            ? sprintf(buf + len, "[ ] Floor %d: ", table)
+            : sprintf(buf + len, "[*] Floor %d: ", table);
+
+    /* this is how you iterate over a list
+        list_for_each_entry(Passenger, &Floors.floors[0].list, list) {
+        len += sprintf(buf + len, "%c ", Passenger->name);
+        }*/
+
+        /* print entries */
+        len += sprintf(buf + len, "%d ", Floors.floors[i].num_passengers);
+        j = 0;
+    //list_for_each_prev(temp, &passengerss.list) { /* backwards */
+        list_for_each(temp, &Floors.floors[i].list) { /* forwards*/
+        a = list_entry(temp, struct Passenger, list);
+        len += sprintf(buf + len, "%s", a->name);
+        len += sprintf(buf + len, "%d ", a->dest_floor);
+        //strcat(message, buf);
+        j++;
+        }
+        len += sprintf(buf + len, " \n"); 
+    }
+    len += sprintf(buf + len, "\n\nNumber of Passengers: %d\n", elevator_thread.total_passengers);
+    len += sprintf(buf + len, "Number of Passengers waiting: %d\n", elevator_thread.total_waiting);
+    len += sprintf(buf + len, "Number of Passengers serviced: %d\n", elevator_thread.total_serviced);
+   
+    return len;
+}
+
+/* This function triggers every read! */
+static ssize_t procfile_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos)
 {
-    char buf[10000];
+    char buf[512];
     int len = 0;
 
-    len = sprintf(buf, "Elevator state: %s\n", elevator.status1);
-    len += sprintf(buf + len, "Current floor: %d\n", elevator.current_floor);
-    len += sprintf(buf + len, "Current load: %d\n", elevator.total_weight);
-    len += sprintf(buf + len, "Elevator status: \n\n");
-    // you can finish the rest.
-    len += sprintf(buf + len, "[ ] Floor 6: \n");
-    len += sprintf(buf + len, "[ ] Floor 5: \n");
-    len += sprintf(buf + len, "[ ] Floor 4: \n");
-    len += sprintf(buf + len, "[ ] Floor 3: \n");
-    len += sprintf(buf + len, "[ ] Floor 2: \n");
-    len += sprintf(buf + len, "[*] Floor 1: \n");
+    if (*ppos > 0 || count < 512)
+        return 0;
 
-    len += sprintf(buf + len, "Number of Passengers: %d\n", elevator.total_passengers);
-    len += sprintf(buf + len, "Number of Passengers waiting: \n");
-    len += sprintf(buf + len, "Number of Passengers serviced: %d\n", elevator.passengers_serviced);
-    
+    // recall that this is triggered every second if we do watch -n1 cat /proc/elevator
+    len = print_Floors_state(buf);   // this is how we write to the file!
+
     return simple_read_from_buffer(ubuf, count, ppos, buf, len); // better than copy_from_user
 }
 
-static const struct proc_ops elevator_fops = {
-    .proc_read = elevator_read,
+
+/**************** SYSTEM CALLS *************************/
+
+int start_elevator(void) {
+    //mutex??
+    spawn_elevator(&elevator_thread); 
+    return 0;
+}
+
+int issue_request(int start_floor, int destination_floor, int type) {
+    printk(KERN_INFO "start: %d, dest: %d,type: %d ", start_floor, destination_floor, type);
+    //use linked lists to put in right floors
+    add_passengers(start_floor, destination_floor, type); 
+    return 0;
+}
+
+int stop_elevator(void) {
+    for (int i = 0; i < 6; i++)
+    {
+        Floors.floors[i].num_passengers = 0;
+        delete_passengerss(i);
+    }
+    delete_elevator();
+    
+    kthread_stop(elevator_thread.kthread);  
+    elevator_thread.status = OFFLINE;
+    elevator_thread.load_weight = 0;
+    elevator_thread.total_passengers = 0;
+    elevator_thread.total_waiting = 0;
+    return 0;
+}
+
+/***************** END OF SYSCALLS *********************/
+
+/* This is where we define our procfile operations */
+static struct proc_ops procfile_pops = {
+    .proc_read = procfile_read,
 };
 
-static int __init elevator_init(void)
-{
+/* Treat this like a main function, this is where your kernel module will
+   start from, as it gets loaded. */
+static int __init elevator_init(void) {
+
+    //chat
+    elevator_thread.load_weight = 0;
+    elevator_thread.total_serviced = 0;
+    elevator_thread.total_passengers = 0;
+    elevator_thread.total_waiting = 0;
+    //chat
+
+    elevator_thread.load_weight = 0; // Initialize the load weight
+    INIT_LIST_HEAD(&elevator_thread.passengers);
+
+    for (int i = 0; i < NUM_TABLES; i++) {
+        Floors.floors[i].num_passengers = 0;
+        INIT_LIST_HEAD(&Floors.floors[i].list);
+        mutex_init(&Floors.floors[i].floor_mutex);
+    }
+    //chat
+    mutex_init(&floors_mutex);
+    mutex_init(&elevator_thread.elevator_mutex);
+    
     // This is where we link our system calls to our stubs
     STUB_start_elevator = start_elevator;
     STUB_issue_request = issue_request;
     STUB_stop_elevator = stop_elevator;
 
-    //struct Elevator elevator; 
-    elevator.current_floor = 1;
-    elevator.total_passengers = 0;
-    elevator.state=0; 
-    elevator.total_weight = 0;
-    elevator.passengers_serviced = 0; 
-    elevator.status1 = "OFFLINE";         //CHECK THIS AGAIN LATER
-
-    elevator_entry = proc_create(ENTRY_NAME, PERMS, PARENT, &elevator_fops);
-    if (!elevator_entry) {
-        return -ENOMEM;
+    if(IS_ERR(elevator_thread.kthread)) {
+        printk(KERN_WARNING "error creating thread");
+        remove_proc_entry(ENTRY_NAME, PARENT);
+        return PTR_ERR(elevator_thread.kthread);
     }
+
+    proc_entry = proc_create(                   // this is where we create the proc file!
+        ENTRY_NAME,
+        PERMS,
+        PARENT,
+        &procfile_pops
+    );
+
     return 0;
 }
 
-static void __exit elevator_exit(void)
-{
+/* This is where we exit our kernel module, when we unload it! */
+static void __exit elevator_exit(void) {
 
-    // This is where we unlink our system calls from our stubs
+   // This is where we unlink our system calls from our stubss
     STUB_start_elevator = NULL;
     STUB_issue_request = NULL;
     STUB_stop_elevator = NULL;
     
-    proc_remove(elevator_entry);
+    for (int i = 0; i < NUM_TABLES; i++) {
+        mutex_destroy(&Floors.floors[i].floor_mutex); // Destroy the mutex for each floor
+    }
+
+    mutex_destroy(&elevator_thread.elevator_mutex); // Destroy the mutex for the elevator
+    mutex_destroy(&floors_mutex);
+
+    //kthread_stop(elevator_thread.kthread);                // this is where we stop the thread.
+    remove_proc_entry(ENTRY_NAME, PARENT);              // this is where we remove the proc file!
+    
 }
 
-module_init(elevator_init);
-module_exit(elevator_exit);
+module_init(elevator_init); // initiates kernel module
+module_exit(elevator_exit); // exits kernel module
+
+
+

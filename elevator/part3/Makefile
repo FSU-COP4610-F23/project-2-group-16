@@ -1,4 +1,4 @@
-obj-m += elevator.o
+obj-m += /src/elevator.o
 KDIR := /lib/modules/$(shell uname -r)/build
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules

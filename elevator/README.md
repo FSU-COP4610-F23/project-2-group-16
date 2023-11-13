@@ -4,7 +4,7 @@
 
 ## Group Members
 - **Emily Cleveland**: ec19@fsu.edu
-- **Sophia Elliot**: sbe21@fsu.edu
+- **Sophia Elliott**: sbe21@fsu.edu
 - **Ivan Quinones**: iaq20@fsu.edu
 ## Division of Labor
 
@@ -57,57 +57,70 @@ elevator/
 # How to Compile & Execute
 
 ### Requirements
-- **Compiler**: e.g., `gcc` for C/C++, `rustc` for Rust.
-- **Dependencies**: List any libraries or frameworks necessary (rust only).
+- **Compiler**: gcc
+- **Dependencies**: N/A
 
 ## Part 1
 
 ### Compilation
-For a C/C++ example:
-```bash
 make
-```
-This will build the executable in ...
+
+This will build the executable in part 1 directory.
 ### Execution
-```bash
-make run
-```
-This will run the program ...
+N/A
 
 ## Part 2
 
 ### Compilation
-For a C/C++ example:
-```bash
 make
-```
-This will build the executable in ...
+cd src
+sudo insmod my_timer.ko
+lsmod | grep my_timer
+
+This will build the executable in the src file. 
 ### Execution
-```bash
-make run
-```
-This will run the program ...
+cat /proc/timer
+
+This will print the current time. 
+
+sleep #
+
+This will sleep for the # of seconds.
+
+cat /proc/timer
+
+This will now show the current and elapsed time.
 
 
 ## Part 3
 
 ### Compilation
-For a C/C++ example:
-```bash
 make
-```
-This will build the executable in ...
-### Execution
-```bash
-make run
-```
-This will run the program ...
+cd src
+sudo insmod elevator.ko
 
+This will build the executable in the src file.
+### Execution
+In one terminal: 
+watch -n1 cat /proc/elevator
+
+This will allow the user to watch elevator operate.
+
+In a separate terminal: 
+./producer #
+./consumer --start
+
+This will create a # of passengers and start the elevator.
+
+When done:
+./consumer --stop
+
+This will stop the elevator.
 
 ## Bugs
-- **Bug 1**: This is bug 1.
-- **Bug 2**: This is bug 2.
-- **Bug 3**: This is bug 3.
+- **Bug 1**: Elevator direction sometimes moves to unnecessary floors when it should be going in the opposite
+direction.
+- **Bug 2**: Sometimes it doesn't unload on the first time, but it will unload when it hits the correct floor again.
 
 ## Considerations
-[Description]
+Elevator drops off passengers in FIFO. 

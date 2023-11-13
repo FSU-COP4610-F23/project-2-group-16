@@ -1,44 +1,36 @@
-# Dorm Elevator
+# project-2-group-16
 
-[Description]
+[Dorm Elevator]
 
 ## Group Members
-- **John Doe**: jd19@fsu.edu
-- **Jane Smith**: js19@fsu.edu
-- **Alex Brown**: ab19@fsu.edu
+- **Emily Cleveland**: ec19@fsu.edu
+- **Sophia Elliot**: sbe21@fsu.edu
+- **Ivan Quinones**: iaq20@fsu.edu
 ## Division of Labor
 
 ### Part 1: System Call Tracing
-- **Responsibilities**: [Description]
-- **Assigned to**: John Doe
+- **Assigned to**: Sophia, Ivan, Emily
 
 ### Part 2: Timer Kernel Module
-- **Responsibilities**: [Description]
-- **Assigned to**: Jane Smith
+- **Assigned to**: Sophia, Ivan, Emily
 
 ### Part 3a: Adding System Calls
-- **Responsibilities**: [Description]
-- **Assigned to**: Alex Brown
+- **Assigned to**: Sophia, Ivan, Emily
 
 ### Part 3b: Kernel Compilation
-- **Responsibilities**: [Description]
-- **Assigned to**: Alex Brown, Jane Smith
+- **Assigned to**: Sophia, Ivan, Emily
 
 ### Part 3c: Threads
-- **Responsibilities**: [Description]
-- **Assigned to**: Alex Brown, Jane Smith
+- **Assigned to**: Sophia, Ivan, Emily
 
 ### Part 3d: Linked List
-- **Responsibilities**: [Description]
-- **Assigned to**: Jane Smith
+- **Assigned to**: Sophia, Ivan, Emily
 
 ### Part 3e: Mutexes
-- **Responsibilities**: [Description]
-- **Assigned to**: John Doe
+- **Assigned to**: Sophia, Ivan, Emily
 
 ### Part 3f: Scheduling Algorithm
-- **Responsibilities**: [Description]
-- **Assigned to**: Alex Brown, John Doe
+- **Assigned to**: Sophia, Ivan, Emily
 
 ## File Listing
 ```

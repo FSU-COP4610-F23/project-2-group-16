@@ -9,7 +9,7 @@ int rnd(int min, int max) {
 
 int main(int argc, char **argv) {
 	
-	printf("TESTTESTETS\n");
+	//printf("TESTTESTETS\n");
 	int type;
 	int start;
 	int dest;
@@ -18,13 +18,13 @@ int main(int argc, char **argv) {
 	srand(time(0));
 
 	if (argc != 2) {
-		printf("wrong number of args. producer.x num_of_requests\n");
-		printf("wrong number of args. producer.x num_of_requests\n");
+		//printf("wrong number of args. producer.x num_of_requests\n");
+		//printf("wrong number of args. producer.x num_of_requests\n");
 		return -1;
 	}
 	sscanf(argv[1],"%d",&num);
 
-	printf("TESTTESTETS\n");
+	//printf("TESTTESTETS\n");
 	for(i=0; i < num;i+=1)
 	{
 		type = rnd(0,3);
